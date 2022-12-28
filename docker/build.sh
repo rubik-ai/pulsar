@@ -21,4 +21,4 @@
 ROOT_DIR=$(git rev-parse --show-toplevel)
 cd $ROOT_DIR/docker
 
-mvn package -Pdocker,-main
+mvn package -DskipTests -Pdocker,-main

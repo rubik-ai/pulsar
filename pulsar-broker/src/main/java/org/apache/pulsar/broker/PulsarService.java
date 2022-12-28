@@ -1649,7 +1649,13 @@ public class PulsarService implements AutoCloseable, ShutdownService {
 
     public static WorkerConfig initializeWorkerConfigFromBrokerConfig(ServiceConfiguration brokerConfig,
                                                                       String workerConfigFile) throws IOException {
+        LOG.info("************************************");
+        LOG.info("pulsar service: broker config={}", brokerConfig);
+        LOG.info("************************************");
         WorkerConfig workerConfig = WorkerConfig.load(workerConfigFile);
+        LOG.info("************************************");
+        LOG.info("pulsar service: worker config={}", workerConfig);
+        LOG.info("************************************");
 
         brokerConfig.getWebServicePort()
             .map(port -> workerConfig.setWorkerPort(port));

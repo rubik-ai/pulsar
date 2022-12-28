@@ -189,6 +189,9 @@ public class PulsarWorkerService implements WorkerService {
     public void init(WorkerConfig workerConfig,
                      URI dlogUri,
                      boolean runAsStandalone) {
+        log.info("************************************");
+        log.info("pulsar worker service: config={}", workerConfig);
+        log.info("************************************");
         this.statsUpdater = Executors
             .newSingleThreadScheduledExecutor(new DefaultThreadFactory("worker-stats-updater"));
         this.metricsGenerator = new MetricsGenerator(this.statsUpdater, workerConfig);
