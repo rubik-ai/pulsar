@@ -25,12 +25,10 @@ on:
     paths:
       - '.github/workflows/**'
       - 'pulsar-client-cpp/**'
-  push:
-    branches:
-      - branch-*
-    paths:
-      - '.github/workflows/**'
-      - 'pulsar-client-cpp/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   VCPKG_FEATURE_FLAGS: manifests

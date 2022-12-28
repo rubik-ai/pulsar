@@ -76,7 +76,7 @@ public class PulsarFunctionTlsTest {
     protected String testNamespace = testTenant + "/my-ns";
     private PulsarFunctionTestTemporaryDirectory[] tempDirectories = new PulsarFunctionTestTemporaryDirectory[BROKER_COUNT];
 
-    @BeforeMethod
+    @BeforeMethod(alwaysRun = true)
     void setup() throws Exception {
         log.info("---- Initializing TopicOwnerTest -----");
         // Start local bookkeeper ensemble
@@ -177,12 +177,13 @@ public class PulsarFunctionTlsTest {
     void tearDown() throws Exception {
         try {
             for (int i = 0; i < BROKER_COUNT; i++) {
-                if (pulsarServices[i] != null) {
-                    pulsarServices[i].close();
-                }
                 if (pulsarAdmins[i] != null) {
                     pulsarAdmins[i].close();
                 }
+                if (pulsarServices[i] != null) {
+                    pulsarServices[i].close();
+                }
+
             }
             bkEnsemble.stop();
         } finally {

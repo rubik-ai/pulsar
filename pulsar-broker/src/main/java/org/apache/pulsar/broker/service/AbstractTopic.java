@@ -38,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.ToLongFunction;
 import lombok.Getter;
 import org.apache.bookkeeper.mledger.util.StatsBuckets;
 import org.apache.commons.collections4.CollectionUtils;
@@ -64,6 +65,7 @@ import org.apache.pulsar.common.policies.data.Policies;
 import org.apache.pulsar.common.policies.data.PublishRate;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.SchemaCompatibilityStrategy;
+import org.apache.pulsar.common.policies.data.SubscribeRate;
 import org.apache.pulsar.common.policies.data.TopicPolicies;
 import org.apache.pulsar.common.policies.data.impl.DispatchRateImpl;
 import org.apache.pulsar.common.protocol.schema.SchemaData;
@@ -138,6 +140,9 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
             AtomicLongFieldUpdater.newUpdater(AbstractTopic.class, "usageCount");
     private volatile long usageCount = 0;
 
+    protected final LongAdder msgOutFromRemovedSubscriptions = new LongAdder();
+    protected final LongAdder bytesOutFromRemovedSubscriptions = new LongAdder();
+
     public AbstractTopic(String topic, BrokerService brokerService) {
         this.topic = topic;
         this.brokerService = brokerService;
@@ -153,12 +158,24 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
         this.preciseTopicPublishRateLimitingEnable = config.isPreciseTopicPublishRateLimiterEnable();
     }
 
+    public SubscribeRate getSubscribeRate() {
+        return this.topicPolicies.getSubscribeRate().get();
+    }
+
     public DispatchRateImpl getSubscriptionDispatchRate() {
         return this.topicPolicies.getSubscriptionDispatchRate().get();
     }
 
     public SchemaCompatibilityStrategy getSchemaCompatibilityStrategy() {
         return this.topicPolicies.getSchemaCompatibilityStrategy().get();
+    }
+
+    public DispatchRateImpl getReplicatorDispatchRate() {
+        return this.topicPolicies.getReplicatorDispatchRate().get();
+    }
+
+    public DispatchRateImpl getDispatchRate() {
+        return this.topicPolicies.getDispatchRate().get();
     }
 
     private SchemaCompatibilityStrategy formatSchemaCompatibilityStrategy(SchemaCompatibilityStrategy strategy) {
@@ -194,9 +211,12 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
         topicPolicies.getMessageTTLInSeconds().updateTopicValue(data.getMessageTTLInSeconds());
         topicPolicies.getPublishRate().updateTopicValue(PublishRate.normalize(data.getPublishRate()));
         topicPolicies.getDelayedDeliveryEnabled().updateTopicValue(data.getDelayedDeliveryEnabled());
+        topicPolicies.getReplicatorDispatchRate().updateTopicValue(normalize(data.getReplicatorDispatchRate()));
         topicPolicies.getDelayedDeliveryTickTimeMillis().updateTopicValue(data.getDelayedDeliveryTickTimeMillis());
+        topicPolicies.getSubscribeRate().updateTopicValue(SubscribeRate.normalize(data.getSubscribeRate()));
         topicPolicies.getSubscriptionDispatchRate().updateTopicValue(normalize(data.getSubscriptionDispatchRate()));
         topicPolicies.getCompactionThreshold().updateTopicValue(data.getCompactionThreshold());
+        topicPolicies.getDispatchRate().updateTopicValue(normalize(data.getDispatchRate()));
     }
 
     protected void updateTopicPolicyByNamespacePolicy(Policies namespacePolicies) {
@@ -233,17 +253,39 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
                         .map(DelayedDeliveryPolicies::getTickTime).orElse(null));
         topicPolicies.getSubscriptionTypesEnabled().updateNamespaceValue(
                 subTypeStringsToEnumSet(namespacePolicies.subscription_types_enabled));
+        updateNamespaceReplicatorDispatchRate(namespacePolicies,
+            brokerService.getPulsar().getConfig().getClusterName());
         Arrays.stream(BacklogQuota.BacklogQuotaType.values()).forEach(
                 type -> this.topicPolicies.getBackLogQuotaMap().get(type)
                         .updateNamespaceValue(MapUtils.getObject(namespacePolicies.backlog_quota_map, type)));
+        updateNamespaceSubscribeRate(namespacePolicies, brokerService.getPulsar().getConfig().getClusterName());
         updateNamespaceSubscriptionDispatchRate(namespacePolicies,
             brokerService.getPulsar().getConfig().getClusterName());
         updateSchemaCompatibilityStrategyNamespaceValue(namespacePolicies);
+        updateNamespaceDispatchRate(namespacePolicies, brokerService.getPulsar().getConfig().getClusterName());
+    }
+
+    private void updateNamespaceDispatchRate(Policies namespacePolicies, String cluster) {
+        DispatchRateImpl dispatchRate = namespacePolicies.topicDispatchRate.get(cluster);
+        if (dispatchRate == null) {
+            dispatchRate = namespacePolicies.clusterDispatchRate.get(cluster);
+        }
+        topicPolicies.getDispatchRate().updateNamespaceValue(normalize(dispatchRate));
+    }
+
+    private void updateNamespaceSubscribeRate(Policies namespacePolicies, String cluster) {
+        topicPolicies.getSubscribeRate()
+            .updateNamespaceValue(SubscribeRate.normalize(namespacePolicies.clusterSubscribeRate.get(cluster)));
     }
 
     private void updateNamespaceSubscriptionDispatchRate(Policies namespacePolicies, String cluster) {
         topicPolicies.getSubscriptionDispatchRate()
             .updateNamespaceValue(normalize(namespacePolicies.subscriptionDispatchRate.get(cluster)));
+    }
+
+    private void updateNamespaceReplicatorDispatchRate(Policies namespacePolicies, String cluster) {
+        topicPolicies.getReplicatorDispatchRate()
+            .updateNamespaceValue(normalize(namespacePolicies.replicatorDispatchRate.get(cluster)));
     }
 
     private DispatchRateImpl normalize(DispatchRateImpl dispatchRate) {
@@ -315,18 +357,44 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
         topicPolicies.getCompactionThreshold().updateBrokerValue(config.getBrokerServiceCompactionThresholdInBytes());
         topicPolicies.getReplicationClusters().updateBrokerValue(Collections.emptyList());
         SchemaCompatibilityStrategy schemaCompatibilityStrategy = config.getSchemaCompatibilityStrategy();
+        topicPolicies.getReplicatorDispatchRate().updateBrokerValue(replicatorDispatchRateInBroker(config));
         if (isSystemTopic()) {
             schemaCompatibilityStrategy = config.getSystemTopicSchemaCompatibilityStrategy();
         }
+        topicPolicies.getSubscribeRate().updateBrokerValue(subscribeRateInBroker(config));
         topicPolicies.getSubscriptionDispatchRate().updateBrokerValue(subscriptionDispatchRateInBroker(config));
         topicPolicies.getSchemaCompatibilityStrategy()
                 .updateBrokerValue(formatSchemaCompatibilityStrategy(schemaCompatibilityStrategy));
+        topicPolicies.getDispatchRate().updateBrokerValue(dispatchRateInBroker(config));
+    }
+
+    private DispatchRateImpl dispatchRateInBroker(ServiceConfiguration config) {
+        return DispatchRateImpl.builder()
+                .dispatchThrottlingRateInMsg(config.getDispatchThrottlingRatePerTopicInMsg())
+                .dispatchThrottlingRateInByte(config.getDispatchThrottlingRatePerTopicInByte())
+                .ratePeriodInSecond(1)
+                .build();
+    }
+
+    private SubscribeRate subscribeRateInBroker(ServiceConfiguration config) {
+        return new SubscribeRate(
+            config.getSubscribeThrottlingRatePerConsumer(),
+            config.getSubscribeRatePeriodPerConsumerInSecond()
+        );
     }
 
     private DispatchRateImpl subscriptionDispatchRateInBroker(ServiceConfiguration config) {
         return DispatchRateImpl.builder()
             .dispatchThrottlingRateInMsg(config.getDispatchThrottlingRatePerSubscriptionInMsg())
             .dispatchThrottlingRateInByte(config.getDispatchThrottlingRatePerSubscriptionInByte())
+            .ratePeriodInSecond(1)
+            .build();
+    }
+
+    private DispatchRateImpl replicatorDispatchRateInBroker(ServiceConfiguration config) {
+        return DispatchRateImpl.builder()
+            .dispatchThrottlingRateInMsg(config.getDispatchThrottlingRatePerReplicatorInMsg())
+            .dispatchThrottlingRateInByte(config.getDispatchThrottlingRatePerReplicatorInByte())
             .ratePeriodInSecond(1)
             .build();
     }
@@ -777,6 +845,9 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
         }
     }
 
+    public void updateDispatchRateLimiter() {
+    }
+
     @Override
     public void resetBrokerPublishCountAndEnableReadIfRequired(boolean doneBrokerReset) {
         // topic rate not exceeded, and completed broker limiter reset.
@@ -1020,11 +1091,20 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
     }
 
     public long getMsgOutCounter() {
-        return getStats(false, false, false).msgOutCounter;
+        return msgOutFromRemovedSubscriptions.longValue()
+                + sumSubscriptions(AbstractSubscription::getMsgOutCounter);
     }
 
     public long getBytesOutCounter() {
-        return getStats(false, false, false).bytesOutCounter;
+        return bytesOutFromRemovedSubscriptions.longValue()
+                + sumSubscriptions(AbstractSubscription::getBytesOutCounter);
+    }
+
+    private long sumSubscriptions(ToLongFunction<AbstractSubscription> toCounter) {
+        return getSubscriptions().values().stream()
+                .map(AbstractSubscription.class::cast)
+                .mapToLong(toCounter)
+                .sum();
     }
 
     public boolean isDeleteWhileInactive() {
@@ -1123,8 +1203,8 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
     }
 
     public void updateBrokerSubscriptionDispatchRate() {
-        topicPolicies.getSubscriptionDispatchRate().updateBrokerValue(
-            subscriptionDispatchRateInBroker(brokerService.pulsar().getConfiguration()));
+                topicPolicies.getSubscriptionDispatchRate().updateBrokerValue(
+                    subscriptionDispatchRateInBroker(brokerService.pulsar().getConfiguration()));
     }
 
     public void addFilteredEntriesCount(int filtered) {
@@ -1133,5 +1213,25 @@ public abstract class AbstractTopic implements Topic, TopicPolicyListener<TopicP
 
     public long getFilteredEntriesCount() {
         return this.filteredEntriesCounter.longValue();
+    }
+
+    public void updateBrokerReplicatorDispatchRate() {
+        topicPolicies.getReplicatorDispatchRate().updateBrokerValue(
+            replicatorDispatchRateInBroker(brokerService.pulsar().getConfiguration()));
+    }
+
+    public void updateBrokerDispatchRate() {
+        topicPolicies.getDispatchRate().updateBrokerValue(
+            dispatchRateInBroker(brokerService.pulsar().getConfiguration()));
+    }
+
+    public void updateBrokerPublishRate() {
+        topicPolicies.getPublishRate().updateBrokerValue(
+            publishRateInBroker(brokerService.pulsar().getConfiguration()));
+    }
+
+    public void updateBrokerSubscribeRate() {
+        topicPolicies.getSubscribeRate().updateBrokerValue(
+            subscribeRateInBroker(brokerService.pulsar().getConfiguration()));
     }
 }

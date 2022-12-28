@@ -52,6 +52,7 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerBuilder;
 import org.apache.pulsar.client.api.ProducerConsumerBase;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.client.api.SizeUnit;
 import org.apache.pulsar.client.impl.MessageImpl.SchemaState;
 import org.apache.pulsar.client.impl.ProducerImpl.OpSendMsg;
@@ -487,6 +488,15 @@ public class MessageChunkingTest extends ProducerConsumerBase {
             Message<byte[]> msgAfterSeek = consumer2.receive(5, TimeUnit.SECONDS);
             assertEquals(msgIds.get(i), msgAfterSeek.getMessageId());
         }
+
+        Reader<byte[]> reader = pulsarClient.newReader()
+                .topic(topicName)
+                .startMessageIdInclusive()
+                .startMessageId(msgIds.get(1))
+                .create();
+
+        Message<byte[]> readMsg = reader.readNext(5, TimeUnit.SECONDS);
+        assertEquals(msgIds.get(1), readMsg.getMessageId());
 
         consumer1.close();
         consumer2.close();

@@ -21,6 +21,7 @@ package org.apache.pulsar.broker.namespace;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import com.google.common.collect.Lists;
@@ -893,9 +894,10 @@ public class NamespaceService implements AutoCloseable {
                     // retry several times on BadVersion
                     if ((t.getCause() instanceof MetadataStoreException.BadVersionException)
                             && (counter.decrementAndGet() >= 0)) {
-                        pulsar.getOrderedExecutor()
+                        pulsar.getExecutor().schedule(() -> pulsar.getOrderedExecutor()
                                 .execute(() -> splitAndOwnBundleOnceAndRetry(
-                                        bundle, unload, counter, completionFuture, splitAlgorithm));
+                                        bundle, unload, counter, completionFuture, splitAlgorithm)),
+                                100, MILLISECONDS);
                     } else if (t instanceof IllegalArgumentException) {
                         completionFuture.completeExceptionally(t);
                     } else {
@@ -1012,6 +1014,15 @@ public class NamespaceService implements AutoCloseable {
             LOG.warn("Unable to find OwnedBundle for topic - [{}]", topicName, e);
             return false;
         }
+    }
+
+    public CompletableFuture<Boolean> isServiceUnitActiveAsync(TopicName topicName) {
+        Optional<CompletableFuture<OwnedBundle>> res = ownershipCache.getOwnedBundleAsync(getBundle(topicName));
+        if (!res.isPresent()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        return res.get().thenApply(ob -> ob != null && ob.isActive());
     }
 
     private boolean isNamespaceOwned(NamespaceName fqnn) throws Exception {
@@ -1208,7 +1219,7 @@ public class NamespaceService implements AutoCloseable {
 
     public CompletableFuture<List<String>> getListOfNonPersistentTopics(NamespaceName namespaceName) {
 
-        return PulsarWebResource.checkLocalOrGetPeerReplicationCluster(pulsar, namespaceName)
+        return PulsarWebResource.checkLocalOrGetPeerReplicationCluster(pulsar, namespaceName, true)
                 .thenCompose(peerClusterData -> {
                     // if peer-cluster-data is present it means namespace is owned by that peer-cluster and request
                     // should be redirect to the peer-cluster

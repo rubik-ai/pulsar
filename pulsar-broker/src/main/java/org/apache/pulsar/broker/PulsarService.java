@@ -89,7 +89,6 @@ import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.loadbalance.LoadReportUpdaterTask;
 import org.apache.pulsar.broker.loadbalance.LoadResourceQuotaUpdaterTask;
 import org.apache.pulsar.broker.loadbalance.LoadSheddingTask;
-import org.apache.pulsar.broker.loadbalance.impl.LoadManagerShared;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandlers;
 import org.apache.pulsar.broker.resourcegroup.ResourceGroupService;
@@ -130,6 +129,7 @@ import org.apache.pulsar.client.impl.conf.ClientConfigurationData;
 import org.apache.pulsar.client.impl.conf.ConfigurationDataUtils;
 import org.apache.pulsar.client.internal.PropertiesUtils;
 import org.apache.pulsar.client.util.ExecutorProvider;
+import org.apache.pulsar.client.util.ScheduledExecutorProvider;
 import org.apache.pulsar.common.conf.InternalConfigurationData;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.configuration.VipStatus;
@@ -208,7 +208,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
     private LedgerOffloader defaultOffloader;
     private Map<NamespaceName, LedgerOffloader> ledgerOffloaderMap = new ConcurrentHashMap<>();
     private ScheduledFuture<?> loadReportTask = null;
-    private ScheduledFuture<?> loadSheddingTask = null;
+    private LoadSheddingTask loadSheddingTask = null;
     private ScheduledFuture<?> loadResourceQuotaTask = null;
     private final AtomicReference<LoadManager> loadManager = new AtomicReference<>();
     private PulsarAdmin adminClient = null;
@@ -233,6 +233,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
     protected final EventLoopGroup ioEventLoopGroup;
     private final ExecutorProvider brokerClientSharedInternalExecutorProvider;
     private final ExecutorProvider brokerClientSharedExternalExecutorProvider;
+    private final ScheduledExecutorProvider brokerClientSharedScheduledExecutorProvider;
     private final Timer brokerClientSharedTimer;
 
     private MetricsGenerator metricsGenerator;
@@ -336,6 +337,8 @@ public class PulsarService implements AutoCloseable, ShutdownService {
         // since an instance is required, a single threaded shared instance is used for all broker client instances
         this.brokerClientSharedExternalExecutorProvider =
                 new ExecutorProvider(1, "broker-client-shared-external-executor");
+        this.brokerClientSharedScheduledExecutorProvider =
+                new ScheduledExecutorProvider(1, "broker-client-shared-scheduled-executor");
         this.brokerClientSharedTimer =
                 new HashedWheelTimer(new DefaultThreadFactory("broker-client-shared-timer"), 1, TimeUnit.MILLISECONDS);
     }
@@ -436,13 +439,6 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                                                     * getConfiguration()
                                                     .getBrokerShutdownTimeoutMs())));
 
-            // shutdown loadmanager before shutting down the broker
-            executorServicesShutdown.shutdown(loadManagerExecutor);
-            LoadManager loadManager = this.loadManager.get();
-            if (loadManager != null) {
-                loadManager.stop();
-            }
-
             List<CompletableFuture<Void>> asyncCloseFutures = new ArrayList<>();
             if (this.brokerService != null) {
                 CompletableFuture<Void> brokerCloseFuture = this.brokerService.closeAsync();
@@ -477,6 +473,12 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                 this.leaderElectionService = null;
             }
 
+            // cancel loadShedding task and shutdown the loadManager executor before shutting down the broker
+            if (this.loadSheddingTask != null) {
+                this.loadSheddingTask.cancel();
+            }
+            executorServicesShutdown.shutdown(loadManagerExecutor);
+
             if (adminClient != null) {
                 adminClient.close();
                 adminClient = null;
@@ -503,7 +505,10 @@ public class PulsarService implements AutoCloseable, ShutdownService {
             executorServicesShutdown.shutdown(orderedExecutor);
             executorServicesShutdown.shutdown(cacheExecutor);
 
-
+            LoadManager loadManager = this.loadManager.get();
+            if (loadManager != null) {
+                loadManager.stop();
+            }
 
             if (schemaRegistryService != null) {
                 schemaRegistryService.close();
@@ -535,6 +540,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
 
             brokerClientSharedExternalExecutorProvider.shutdownNow();
             brokerClientSharedInternalExecutorProvider.shutdownNow();
+            brokerClientSharedScheduledExecutorProvider.shutdownNow();
             brokerClientSharedTimer.stop();
             ioEventLoopGroup.shutdownGracefully();
 
@@ -982,20 +988,17 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                     if (state == LeaderElectionState.Leading) {
                         LOG.info("This broker was elected leader");
                         if (getConfiguration().isLoadBalancerEnabled()) {
-                            long loadSheddingInterval = TimeUnit.MINUTES
-                                    .toMillis(getConfiguration().getLoadBalancerSheddingIntervalMinutes());
                             long resourceQuotaUpdateInterval = TimeUnit.MINUTES
                                     .toMillis(getConfiguration().getLoadBalancerResourceQuotaUpdateIntervalMinutes());
 
                             if (loadSheddingTask != null) {
-                                loadSheddingTask.cancel(false);
+                                loadSheddingTask.cancel();
                             }
                             if (loadResourceQuotaTask != null) {
                                 loadResourceQuotaTask.cancel(false);
                             }
-                            loadSheddingTask = loadManagerExecutor.scheduleAtFixedRate(
-                                    new LoadSheddingTask(loadManager),
-                                    loadSheddingInterval, loadSheddingInterval, TimeUnit.MILLISECONDS);
+                            loadSheddingTask = new LoadSheddingTask(loadManager, loadManagerExecutor, config);
+                            loadSheddingTask.start();
                             loadResourceQuotaTask = loadManagerExecutor.scheduleAtFixedRate(
                                     new LoadResourceQuotaUpdaterTask(loadManager), resourceQuotaUpdateInterval,
                                     resourceQuotaUpdateInterval, TimeUnit.MILLISECONDS);
@@ -1006,7 +1009,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                                     leaderElectionService.getCurrentLeader());
                         }
                         if (loadSheddingTask != null) {
-                            loadSheddingTask.cancel(false);
+                            loadSheddingTask.cancel();
                             loadSheddingTask = null;
                         }
                         if (loadResourceQuotaTask != null) {
@@ -1087,7 +1090,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
         if (config.isLoadBalancerEnabled()) {
             LOG.info("Starting load balancer");
             if (this.loadReportTask == null) {
-                long loadReportMinInterval = LoadManagerShared.LOAD_REPORT_UPDATE_MINIMUM_INTERVAL;
+                long loadReportMinInterval = config.getLoadBalancerReportUpdateMinIntervalMillis();
                 this.loadReportTask = this.loadManagerExecutor.scheduleAtFixedRate(
                         new LoadReportUpdaterTask(loadManager), loadReportMinInterval, loadReportMinInterval,
                         TimeUnit.MILLISECONDS);
@@ -1334,13 +1337,16 @@ public class PulsarService implements AutoCloseable, ShutdownService {
     }
 
     public synchronized Compactor getCompactor() throws PulsarServerException {
-        return getCompactor(true);
-    }
-
-    public synchronized Compactor getCompactor(boolean shouldInitialize) throws PulsarServerException {
-        if (this.compactor == null && shouldInitialize) {
+        if (this.compactor == null) {
             this.compactor = newCompactor();
         }
+        return this.compactor;
+    }
+
+    // This method is used for metrics, which is allowed to as null
+    // Because it's no operation on the compactor, so let's remove the  synchronized on this method
+    // to avoid unnecessary lock competition.
+    public Compactor getNullableCompactor() {
         return this.compactor;
     }
 
@@ -1361,6 +1367,7 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                 .timer(brokerClientSharedTimer)
                 .internalExecutorProvider(brokerClientSharedInternalExecutorProvider)
                 .externalExecutorProvider(brokerClientSharedExternalExecutorProvider)
+                .scheduledExecutorProvider(brokerClientSharedScheduledExecutorProvider)
                 .build();
     }
 
@@ -1381,12 +1388,13 @@ public class PulsarService implements AutoCloseable, ShutdownService {
                 ClientConfigurationData conf =
                         ConfigurationDataUtils.loadData(overrides, initialConf, ClientConfigurationData.class);
 
-                conf.setServiceUrl(this.getConfiguration().isTlsEnabled()
-                                ? this.brokerServiceUrlTls : this.brokerServiceUrl);
-                conf.setTlsAllowInsecureConnection(this.getConfiguration().isTlsAllowInsecureConnection());
-                conf.setTlsTrustCertsFilePath(this.getConfiguration().getTlsCertificateFilePath());
+                boolean tlsEnabled = this.getConfiguration().isBrokerClientTlsEnabled();
+                conf.setServiceUrl(tlsEnabled ? this.brokerServiceUrlTls : this.brokerServiceUrl);
 
-                if (this.getConfiguration().isBrokerClientTlsEnabled()) {
+                if (tlsEnabled) {
+                    conf.setTlsCiphers(this.getConfiguration().getBrokerClientTlsCiphers());
+                    conf.setTlsProtocols(this.getConfiguration().getBrokerClientTlsProtocols());
+                    conf.setTlsAllowInsecureConnection(this.getConfiguration().isTlsAllowInsecureConnection());
                     if (this.getConfiguration().isBrokerClientTlsEnabledWithKeyStore()) {
                         conf.setUseKeyStoreTls(true);
                         conf.setTlsTrustStoreType(this.getConfiguration().getBrokerClientTlsTrustStoreType());

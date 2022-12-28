@@ -18,6 +18,7 @@
  */
 package org.apache.bookkeeper.mledger.impl;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -52,6 +53,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -407,6 +409,33 @@ public class ManagedLedgerTest extends MockedBookKeeperTestCase {
 
         ledger.close();
     }
+
+    @Test
+    public void testStartReadOperationOnLedgerWithEmptyLedgers() throws ManagedLedgerException, InterruptedException {
+        ManagedLedger ledger = factory.open("my_test_ledger_1");
+        ManagedLedgerImpl ledgerImpl = (ManagedLedgerImpl) ledger;
+        NavigableMap<Long, LedgerInfo> ledgers = ledgerImpl.getLedgersInfo();
+        LedgerInfo ledgerInfo = ledgers.firstEntry().getValue();
+        ledgers.clear();
+        ManagedCursor c1 = ledger.openCursor("c1");
+        PositionImpl position = new PositionImpl(ledgerInfo.getLedgerId(), 0);
+        PositionImpl maxPosition = new PositionImpl(ledgerInfo.getLedgerId(), 99);
+        OpReadEntry opReadEntry = OpReadEntry.create((ManagedCursorImpl) c1, position, 20,
+                new ReadEntriesCallback() {
+
+                    @Override
+                    public void readEntriesComplete(List<Entry> entries, Object ctx) {
+
+                    }
+
+                    @Override
+                    public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
+
+                    }
+                }, null, maxPosition);
+        Assert.assertEquals(opReadEntry.readPosition, position);
+    }
+
 
     @Test(timeOut = 20000)
     public void spanningMultipleLedgersWithSize() throws Exception {
@@ -2912,10 +2941,15 @@ public class ManagedLedgerTest extends MockedBookKeeperTestCase {
             if (i > 4) {
                 Assert.assertEquals(oldOp.getState(), OpAddEntry.State.CLOSED);
             } else {
-                Assert.assertEquals(oldOp.getState(), OpAddEntry.State.INITIATED);
+                // When call `OpAddEntry#initiate`, which happens in `ledger.updateLedgersIdsComplete` above, the
+                // `OpAddEntry` state will be `INITIATED` if `ledger.asyncAddEntry` doesn't complete, otherwise, the
+                // state will be `COMPLETED`
+                Assert.assertTrue(oldOp.getState() == OpAddEntry.State.INITIATED
+                    || oldOp.getState() == OpAddEntry.State.COMPLETED);
             }
             OpAddEntry newOp = ledger.pendingAddEntries.poll();
-            Assert.assertEquals(newOp.getState(), OpAddEntry.State.INITIATED);
+            Assert.assertTrue(newOp.getState() == OpAddEntry.State.INITIATED
+                || newOp.getState() == OpAddEntry.State.COMPLETED);
             if (i > 4) {
                 Assert.assertNotSame(oldOp, newOp);
             } else {
@@ -3545,5 +3579,47 @@ public class ManagedLedgerTest extends MockedBookKeeperTestCase {
             CompletableFuture<LedgerInfo> ledgerInfo = ledger.getLedgerInfo(ledgerId);
             Assert.assertFalse(ledgerInfo.get(100, TimeUnit.MILLISECONDS).getOffloadContext().getComplete());
         });
+    }
+
+    @Test
+    public void testGetTheSlowestNonDurationReadPosition() throws Exception {
+        ManagedLedgerImpl ledger = (ManagedLedgerImpl) factory.open("test_",
+                new ManagedLedgerConfig().setMaxEntriesPerLedger(1).setRetentionTime(-1, TimeUnit.SECONDS)
+                        .setRetentionSizeInMB(-1));
+        ledger.openCursor("c1");
+
+        List<Position> positions = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            positions.add(ledger.addEntry(("entry-" + i).getBytes(UTF_8)));
+        }
+
+        Assert.assertEquals(ledger.getTheSlowestNonDurationReadPosition(), PositionImpl.LATEST);
+
+        ManagedCursor nonDurableCursor = ledger.newNonDurableCursor(PositionImpl.EARLIEST);
+
+        Assert.assertEquals(ledger.getTheSlowestNonDurationReadPosition(), positions.get(0));
+
+        ledger.deleteCursor(nonDurableCursor.getName());
+
+        Assert.assertEquals(ledger.getTheSlowestNonDurationReadPosition(), PositionImpl.LATEST);
+
+        ledger.close();
+    }
+
+    @Test
+    public void testGetLedgerMetadata() throws Exception {
+        ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) factory.open("testGetLedgerMetadata");
+        long lastLedger = managedLedger.ledgers.lastEntry().getKey();
+        managedLedger.getLedgerMetadata(lastLedger);
+        Assert.assertFalse(managedLedger.ledgerCache.containsKey(lastLedger));
+    }
+
+    @Test
+    public void testGetEnsemblesAsync() throws Exception {
+        // test getEnsemblesAsync of latest ledger will not open it twice and put it in ledgerCache.
+        ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) factory.open("testGetLedgerMetadata");
+        long lastLedger = managedLedger.ledgers.lastEntry().getKey();
+        managedLedger.getEnsemblesAsync(lastLedger).join();
+        Assert.assertFalse(managedLedger.ledgerCache.containsKey(lastLedger));
     }
 }

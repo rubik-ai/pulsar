@@ -647,13 +647,22 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
         }
     }
 
-    private boolean populateMessageSchema(MessageImpl msg, SendCallback callback) {
+    @VisibleForTesting
+    boolean populateMessageSchema(MessageImpl msg, SendCallback callback) {
         MessageMetadata msgMetadataBuilder = msg.getMessageBuilder();
         if (msg.getSchemaInternal() == schema) {
             schemaVersion.ifPresent(v -> msgMetadataBuilder.setSchemaVersion(v));
             msg.setSchemaState(MessageImpl.SchemaState.Ready);
             return true;
         }
+        // If the message is from the replicator and without replicated schema
+        // Which means the message is written with BYTES schema
+        // So we don't need to replicate schema to the remote cluster
+        if (msg.hasReplicateFrom() && msg.getSchemaInfoForReplicator() == null) {
+            msg.setSchemaState(MessageImpl.SchemaState.Ready);
+            return true;
+        }
+
         if (!isMultiSchemaEnabled(true)) {
             PulsarClientException.InvalidMessageException e = new PulsarClientException.InvalidMessageException(
                     format("The producer %s of the topic %s is disabled the `MultiSchema`", producerName, topic)
@@ -661,8 +670,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
             completeCallbackAndReleaseSemaphore(msg.getUncompressedSize(), callback, e);
             return false;
         }
-        SchemaHash schemaHash = SchemaHash.of(msg.getSchemaInternal());
-        byte[] schemaVersion = schemaCache.get(schemaHash);
+        byte[] schemaVersion = schemaCache.get(msg.getSchemaHash());
         if (schemaVersion != null) {
             msgMetadataBuilder.setSchemaVersion(schemaVersion);
             msg.setSchemaState(MessageImpl.SchemaState.Ready);
@@ -671,8 +679,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
     }
 
     private boolean rePopulateMessageSchema(MessageImpl msg) {
-        SchemaHash schemaHash = SchemaHash.of(msg.getSchemaInternal());
-        byte[] schemaVersion = schemaCache.get(schemaHash);
+        byte[] schemaVersion = schemaCache.get(msg.getSchemaHash());
         if (schemaVersion == null) {
             return false;
         }
@@ -703,8 +710,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
                 // case, we should not cache the schema version so that the schema version of the message metadata will
                 // be null, instead of an empty array.
                 if (v.length != 0) {
-                    SchemaHash schemaHash = SchemaHash.of(msg.getSchemaInternal());
-                    schemaCache.putIfAbsent(schemaHash, v);
+                    schemaCache.putIfAbsent(msg.getSchemaHash(), v);
                     msg.getMessageBuilder().setSchemaVersion(v);
                 }
                 msg.setSchemaState(MessageImpl.SchemaState.Ready);
@@ -1959,8 +1965,10 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
             return;
         }
         final int numMessagesInBatch = batchMessageContainer.getNumMessagesInBatch();
-        batchMessageContainer.discard(ex);
+        final long currentBatchSize = batchMessageContainer.getCurrentBatchSize();
         semaphoreRelease(numMessagesInBatch);
+        client.getMemoryLimitController().releaseMemory(currentBatchSize);
+        batchMessageContainer.discard(ex);
     }
 
     @Override
@@ -2005,10 +2013,7 @@ public class ProducerImpl<T> extends ProducerBase<T> implements TimerTask, Conne
                 for (OpSendMsg opSendMsg : opSendMsgs) {
                     processOpSendMsg(opSendMsg);
                 }
-            } catch (PulsarClientException e) {
-                semaphoreRelease(batchMessageContainer.getNumMessagesInBatch());
             } catch (Throwable t) {
-                semaphoreRelease(batchMessageContainer.getNumMessagesInBatch());
                 log.warn("[{}] [{}] error while create opSendMsg by batch message container", topic, producerName, t);
             }
         }

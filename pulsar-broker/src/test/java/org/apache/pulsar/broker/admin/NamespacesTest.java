@@ -1172,6 +1172,18 @@ public class NamespacesTest extends MockedPulsarServiceBaseTest {
         topicList = admin.topics().getList(namespace);
         assertTrue(topicList.isEmpty());
 
+        // simulate a partially deleted namespace, we should be able to recover
+        pulsar.getPulsarResources().getNamespaceResources()
+                .setPolicies(NamespaceName.get(namespace), old -> {
+            old.deleted = true;
+            return old;
+        });
+        admin.namespaces().deleteNamespace(namespace, true);
+
+        admin.namespaces().createNamespace(namespace, 100);
+        topicList = admin.topics().getList(namespace);
+        assertTrue(topicList.isEmpty());
+
         // reset back to false
         pulsar.getConfiguration().setForceDeleteNamespaceAllowed(false);
     }
@@ -1500,6 +1512,8 @@ public class NamespacesTest extends MockedPulsarServiceBaseTest {
         admin.tenants().createTenant("testTenant", tenantInfo);
         admin.namespaces().createNamespace(namespace, Sets.newHashSet("use"));
 
+        assertEquals(0, admin.namespaces().getMaxTopicsPerNamespace(namespace));
+
         admin.namespaces().setMaxTopicsPerNamespace(namespace, 10);
         assertEquals(10, admin.namespaces().getMaxTopicsPerNamespace(namespace));
 
@@ -1748,6 +1762,9 @@ public class NamespacesTest extends MockedPulsarServiceBaseTest {
         String namespace = BrokerTestUtil.newUniqueName(this.testTenant + "/namespace");
         BundlesData data = BundlesData.builder().numBundles(4).build();
         admin.namespaces().createNamespace(namespace, data);
+        URL localWebServiceUrl = new URL(pulsar.getSafeWebServiceAddress());
+        final NamespaceName testNs = NamespaceName.get(namespace);
+        mockWebUrl(localWebServiceUrl, testNs);
         for (int i = 0; i < 10; i ++) {
             final BundlesData bundles = admin.namespaces().getBundles(namespace);
             final String bundle = bundles.getBoundaries().get(0) + "_" + bundles.getBoundaries().get(1);

@@ -495,6 +495,19 @@ public class AdminApiTest extends MockedPulsarServiceBaseTest {
         assertEquals(admin.clusters().getClusters(), Lists.newArrayList());
     }
 
+    public void testUpdateDynamicLoadBalancerSheddingIntervalMinutes() throws Exception {
+        // update configuration
+        admin.brokers().updateDynamicConfiguration("loadBalancerSheddingIntervalMinutes", "10");
+
+        // wait config to be updated
+        Awaitility.await().until(() -> {
+            return conf.getLoadBalancerSheddingIntervalMinutes() == 10;
+        });
+
+        // verify value is updated
+        assertEquals(conf.getLoadBalancerSheddingIntervalMinutes(), 10);
+    }
+
     /**
      * <pre>
      * Verifies: zk-update configuration updates service-config
@@ -1502,7 +1515,7 @@ public class AdminApiTest extends MockedPulsarServiceBaseTest {
         try {
             admin.namespaces().splitNamespaceBundle(namespace, "0x00000000_0xffffffff", false, null);
         } catch (Exception e) {
-            fail("split bundle shouldn't have thrown exception");
+            fail("split bundle shouldn't have thrown exception", e);
         }
 
         // bundle-factory cache must have updated split bundles
@@ -1530,7 +1543,7 @@ public class AdminApiTest extends MockedPulsarServiceBaseTest {
                 f.get();
             }
         } catch (Exception e) {
-            fail("split bundle shouldn't have thrown exception");
+            fail("split bundle shouldn't have thrown exception", e);
         }
 
         Awaitility.await().untilAsserted(() ->
@@ -1565,7 +1578,7 @@ public class AdminApiTest extends MockedPulsarServiceBaseTest {
                 f.get();
             }
         } catch (Exception e) {
-            fail("split bundle shouldn't have thrown exception");
+            fail("split bundle shouldn't have thrown exception", e);
         }
         Awaitility.await().untilAsserted(() ->
                 assertEquals(bundleFactory.getBundles(NamespaceName.get(namespace)).getBundles().size(), 8));
@@ -3121,5 +3134,37 @@ public class AdminApiTest extends MockedPulsarServiceBaseTest {
             assertEquals(peekedMessages.get(i).getMessageId(), receivedMessages.get(i).getMessageId());
             assertEquals(peekedMessages.get(i).getData(), receivedMessages.get(i).getData());
         }
+    }
+
+    @Test
+    public void testRetentionAndBacklogQuotaCheck() throws PulsarAdminException {
+        String namespace = "prop-xyz/ns1";
+        //test size check.
+        admin.namespaces().setRetention(namespace, new RetentionPolicies(-1, 10));
+        admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitSize(9 * 1024 * 1024).build());
+        Assert.expectThrows(PulsarAdminException.PreconditionFailedException.class, () -> {
+            admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitSize(100 * 1024 * 1024).build());
+        });
+
+        //test time check
+        admin.namespaces().setRetention(namespace, new RetentionPolicies(10, -1));
+        admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitTime(9 * 60).build());
+        Assert.expectThrows(PulsarAdminException.PreconditionFailedException.class, () -> {
+            admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitTime(11 * 60).build());
+        });
+
+        // test both size and time.
+        admin.namespaces().setRetention(namespace, new RetentionPolicies(10, 10));
+        admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitSize(9 * 1024 * 1024).build());
+        admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitTime(9 * 60).build());
+        admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitSize(9 * 1024 * 1024).
+                limitTime(9 * 60).build());
+        Assert.expectThrows(PulsarAdminException.PreconditionFailedException.class, () -> {
+            admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitSize(100 * 1024 * 1024).build());
+        });
+        Assert.expectThrows(PulsarAdminException.PreconditionFailedException.class, () -> {
+            admin.namespaces().setBacklogQuota(namespace, BacklogQuota.builder().limitTime(100 * 60).build());
+        });
+
     }
 }

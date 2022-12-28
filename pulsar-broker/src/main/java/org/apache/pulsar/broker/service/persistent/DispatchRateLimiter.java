@@ -170,8 +170,14 @@ public class DispatchRateLimiter {
      */
     public void updateDispatchRate() {
         switch (type) {
+            case TOPIC:
+                updateDispatchRate(topic.getDispatchRate());
+                return;
             case SUBSCRIPTION:
                 updateDispatchRate(topic.getSubscriptionDispatchRate());
+                return;
+            case REPLICATOR:
+                updateDispatchRate(topic.getReplicatorDispatchRate());
                 return;
         }
 

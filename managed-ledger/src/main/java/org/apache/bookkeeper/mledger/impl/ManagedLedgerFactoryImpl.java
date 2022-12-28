@@ -257,7 +257,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         double evictionFrequency = Math.max(Math.min(config.getCacheEvictionFrequency(), 1000.0), 0.001);
         long waitTimeMillis = (long) (1000 / evictionFrequency);
 
-        while (true) {
+        while (!closed) {
             try {
                 doCacheEviction();
 
@@ -509,6 +509,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
         statsTask.cancel(true);
         flushCursorsTask.cancel(true);
+        cacheEvictionExecutor.shutdownNow();
 
         List<String> ledgerNames = new ArrayList<>(this.ledgers.keySet());
         List<CompletableFuture<Void>> futures = new ArrayList<>(ledgerNames.size());
@@ -589,7 +590,6 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
                 }));
             }
         }));
-        cacheEvictionExecutor.shutdownNow();
         entryCacheManager.clear();
         return FutureUtil.waitForAll(futures);
     }
@@ -603,6 +603,7 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
         statsTask.cancel(true);
         flushCursorsTask.cancel(true);
+        cacheEvictionExecutor.shutdownNow();
 
         // take a snapshot of ledgers currently in the map to prevent race conditions
         List<CompletableFuture<ManagedLedgerImpl>> ledgers = new ArrayList<>(this.ledgers.values());
@@ -646,7 +647,6 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
         }
 
         scheduledExecutor.shutdownNow();
-        cacheEvictionExecutor.shutdownNow();
 
         entryCacheManager.clear();
     }
@@ -883,7 +883,19 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
             DeleteLedgerCallback callback, Object ctx) {
         Futures.waitForAll(info.ledgers.stream()
                 .filter(li -> !li.isOffloaded)
-                .map(li -> bkc.newDeleteLedgerOp().withLedgerId(li.ledgerId).execute())
+                .map(li -> bkc.newDeleteLedgerOp().withLedgerId(li.ledgerId).execute()
+                        .handle((result, ex) -> {
+                            if (ex != null) {
+                                int rc = BKException.getExceptionCode(ex);
+                                if (rc == BKException.Code.NoSuchLedgerExistsOnMetadataServerException
+                                    || rc == BKException.Code.NoSuchLedgerExistsException) {
+                                    log.info("Ledger {} does not exist, ignoring", li.ledgerId);
+                                    return null;
+                                }
+                                throw new CompletionException(ex);
+                            }
+                            return result;
+                        }))
                 .collect(Collectors.toList()))
                 .thenRun(() -> {
                     // Delete the metadata
@@ -911,7 +923,20 @@ public class ManagedLedgerFactoryImpl implements ManagedLedgerFactory {
 
         // Delete the cursor ledger if present
         if (cursor.cursorsLedgerId != -1) {
-            cursorLedgerDeleteFuture = bkc.newDeleteLedgerOp().withLedgerId(cursor.cursorsLedgerId).execute();
+            cursorLedgerDeleteFuture = bkc.newDeleteLedgerOp().withLedgerId(cursor.cursorsLedgerId)
+                    .execute()
+                    .handle((result, ex) -> {
+                        if (ex != null) {
+                            int rc = BKException.getExceptionCode(ex);
+                            if (rc == BKException.Code.NoSuchLedgerExistsOnMetadataServerException
+                                    || rc == BKException.Code.NoSuchLedgerExistsException) {
+                                log.info("Ledger {} does not exist, ignoring", cursor.cursorsLedgerId);
+                                return null;
+                            }
+                            throw new CompletionException(ex);
+                        }
+                        return result;
+                    });
         } else {
             cursorLedgerDeleteFuture = CompletableFuture.completedFuture(null);
         }

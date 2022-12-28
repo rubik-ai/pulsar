@@ -16,14 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.pulsar.stats;
+package org.apache.pulsar.client.util;
 
-import lombok.experimental.UtilityClass;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import lombok.extern.slf4j.Slf4j;
 
-@UtilityClass
-public class CacheMetricsCollector {
+@Slf4j
+public class ScheduledExecutorProvider extends ExecutorProvider {
 
-    public static final io.prometheus.client.cache.caffeine.CacheMetricsCollector CAFFEINE =
-            new io.prometheus.client.cache.caffeine.CacheMetricsCollector()
-            .register();
+    public ScheduledExecutorProvider(int numThreads, String poolName) {
+        super(numThreads, poolName);
+    }
+
+    @Override
+    protected ExecutorService createExecutor(ExtendedThreadFactory threadFactory) {
+        return Executors.newSingleThreadScheduledExecutor(threadFactory);
+    }
 }

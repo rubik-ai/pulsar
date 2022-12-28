@@ -19,6 +19,7 @@
 package org.apache.pulsar.broker.service;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 import static org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.unsafeGetPartitionedTopicMetadataAsync;
 import static org.apache.pulsar.broker.lookup.TopicLookupBase.lookupTopicAsync;
@@ -67,8 +68,8 @@ import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.TransactionMetadataStoreService;
-import org.apache.pulsar.broker.authentication.AuthenticationDataCommand;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSubscription;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
 import org.apache.pulsar.broker.intercept.BrokerInterceptor;
@@ -162,14 +163,14 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
     private final ConcurrentLongHashMap<CompletableFuture<Consumer>> consumers;
     private State state;
     private volatile boolean isActive = true;
-    String authRole = null;
+    private String authRole = null;
     private volatile AuthenticationDataSource authenticationData;
-    AuthenticationProvider authenticationProvider;
-    AuthenticationState authState;
+    private AuthenticationProvider authenticationProvider;
+    private AuthenticationState authState;
     // In case of proxy, if the authentication credentials are forwardable,
     // it will hold the credentials of the original client
-    AuthenticationState originalAuthState;
-    AuthenticationDataSource originalAuthData;
+    private AuthenticationState originalAuthState;
+    private AuthenticationDataSource originalAuthData;
     private boolean pendingAuthChallengeResponse = false;
 
     // Max number of pending requests per connections. If multiple producers are sharing the same connection the flow
@@ -377,19 +378,21 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
     // // Incoming commands handling
     // ////
 
-    private CompletableFuture<Boolean> isTopicOperationAllowed(TopicName topicName, TopicOperation operation) {
+    private CompletableFuture<Boolean> isTopicOperationAllowed(TopicName topicName, TopicOperation operation,
+                    AuthenticationDataSource authDataSource, AuthenticationDataSource originalAuthDataSource) {
         if (!service.isAuthorizationEnabled()) {
             return CompletableFuture.completedFuture(true);
         }
         CompletableFuture<Boolean> isProxyAuthorizedFuture;
         if (originalPrincipal != null) {
             isProxyAuthorizedFuture = service.getAuthorizationService().allowTopicOperationAsync(
-                topicName, operation, originalPrincipal, getAuthenticationData());
+                    topicName, operation, originalPrincipal,
+                    originalAuthDataSource != null ? originalAuthDataSource : authDataSource);
         } else {
             isProxyAuthorizedFuture = CompletableFuture.completedFuture(true);
         }
         CompletableFuture<Boolean> isAuthorizedFuture = service.getAuthorizationService().allowTopicOperationAsync(
-            topicName, operation, authRole, authenticationData);
+            topicName, operation, authRole, authDataSource);
         return isProxyAuthorizedFuture.thenCombine(isAuthorizedFuture, (isProxyAuthorized, isAuthorized) -> {
             if (!isProxyAuthorized) {
                 log.warn("OriginalRole {} is not authorized to perform operation {} on topic {}",
@@ -406,15 +409,13 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
     private CompletableFuture<Boolean> isTopicOperationAllowed(TopicName topicName, String subscriptionName,
                                                                TopicOperation operation) {
         if (service.isAuthorizationEnabled()) {
-            if (authenticationData == null) {
-                authenticationData = new AuthenticationDataCommand("", subscriptionName);
-            } else {
-                authenticationData.setSubscription(subscriptionName);
-            }
+            AuthenticationDataSource authDataSource =
+                    new AuthenticationDataSubscription(authenticationData, subscriptionName);
+            AuthenticationDataSource originalAuthDataSource = null;
             if (originalAuthData != null) {
-                originalAuthData.setSubscription(subscriptionName);
+                originalAuthDataSource = new AuthenticationDataSubscription(originalAuthData, subscriptionName);
             }
-            return isTopicOperationAllowed(topicName, operation);
+            return isTopicOperationAllowed(topicName, operation, authDataSource, originalAuthDataSource);
         } else {
             return CompletableFuture.completedFuture(true);
         }
@@ -449,7 +450,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 lookupSemaphore.release();
                 return;
             }
-            isTopicOperationAllowed(topicName, TopicOperation.LOOKUP).thenApply(isAuthorized -> {
+            isTopicOperationAllowed(topicName, TopicOperation.LOOKUP, authenticationData, originalAuthData).thenApply(
+                    isAuthorized -> {
                 if (isAuthorized) {
                     lookupTopicAsync(getBrokerService().pulsar(), topicName, authoritative,
                             getPrincipal(), getAuthenticationData(),
@@ -512,7 +514,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 lookupSemaphore.release();
                 return;
             }
-            isTopicOperationAllowed(topicName, TopicOperation.LOOKUP).thenApply(isAuthorized -> {
+            isTopicOperationAllowed(topicName, TopicOperation.LOOKUP, authenticationData, originalAuthData).thenApply(
+                    isAuthorized -> {
                 if (isAuthorized) {
                     unsafeGetPartitionedTopicMetadataAsync(getBrokerService().pulsar(), topicName)
                         .handle((metadata, ex) -> {
@@ -874,6 +877,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 }
             } else {
                 originalPrincipal = connect.hasOriginalPrincipal() ? connect.getOriginalPrincipal() : null;
+
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Authenticate original role (forwarded from proxy): {}",
                         remoteAddress, originalPrincipal);
@@ -902,7 +906,8 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
         try {
             AuthData clientData = AuthData.of(authResponse.getResponse().getAuthData());
-            doAuthentication(clientData, authResponse.getProtocolVersion(), authResponse.getClientVersion());
+            doAuthentication(clientData, authResponse.getProtocolVersion(),
+                    authResponse.hasClientVersion() ? authResponse.getClientVersion() : EMPTY);
         } catch (AuthenticationException e) {
             service.getPulsarStats().recordConnectionCreateFail();
             log.warn("[{}] Authentication failed: {} ", remoteAddress, e.getMessage());
@@ -1194,12 +1199,14 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         }
 
         CompletableFuture<Boolean> isAuthorizedFuture = isTopicOperationAllowed(
-                topicName, TopicOperation.PRODUCE
+                topicName, TopicOperation.PRODUCE, authenticationData, originalAuthData
         );
 
         if (!Strings.isNullOrEmpty(initialSubscriptionName)) {
             isAuthorizedFuture =
-                    isAuthorizedFuture.thenCombine(isTopicOperationAllowed(topicName, TopicOperation.SUBSCRIBE),
+                    isAuthorizedFuture.thenCombine(
+                            isTopicOperationAllowed(topicName, TopicOperation.SUBSCRIBE, authenticationData,
+                                    originalAuthData),
                             (canProduce, canSubscribe) -> canProduce && canSubscribe);
         }
 
@@ -1369,7 +1376,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 // Do not print stack traces for expected exceptions
                 if (cause instanceof NoSuchElementException) {
                     cause = new TopicNotFoundException("Topic Not Found.");
-                    log.info("[{}] Failed to load topic {}, producerId={}: Topic not found", remoteAddress, topicName,
+                    log.warn("[{}] Failed to load topic {}, producerId={}: Topic not found", remoteAddress, topicName,
                             producerId);
                 } else if (!Exceptions.areExceptionsPresentInChain(cause,
                         ServiceUnitNotReadyException.class, ManagedLedgerException.class)) {
@@ -1939,7 +1946,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
         CompletableFuture<Boolean> isProxyAuthorizedFuture;
         if (originalPrincipal != null) {
             isProxyAuthorizedFuture = service.getAuthorizationService().allowNamespaceOperationAsync(
-                    namespaceName, operation, originalPrincipal, getAuthenticationData());
+                    namespaceName, operation, originalPrincipal, originalAuthData);
         } else {
             isProxyAuthorizedFuture = CompletableFuture.completedFuture(true);
         }
@@ -1979,6 +1986,9 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
                 if (isAuthorized) {
                     getBrokerService().pulsar().getNamespaceService().getListOfTopics(namespaceName, mode)
                         .thenAccept(topics -> {
+                            topics = topics.stream()
+                                    .filter(topic -> !PulsarService.isTransactionSystemTopic(TopicName.get(topic)))
+                                    .collect(Collectors.toList());
                             if (log.isDebugEnabled()) {
                                 log.debug(
                                         "[{}] Received CommandGetTopicsOfNamespace for namespace [//{}] by {}, size:{}",
@@ -2915,6 +2925,7 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
     @Override
     public String clientSourceAddress() {
+        AuthenticationDataSource authenticationDataSource = this.getAuthData();
         if (proxyMessage != null) {
             return proxyMessage.sourceAddress();
         } else if (remoteAddress instanceof InetSocketAddress) {
@@ -2951,5 +2962,30 @@ public class ServerCnx extends PulsarHandler implements TransportCnx {
 
     public boolean hasProducers() {
         return !producers.isEmpty();
+    }
+
+    @VisibleForTesting
+    protected String getOriginalPrincipal() {
+        return originalPrincipal;
+    }
+
+    @VisibleForTesting
+    protected AuthenticationDataSource getAuthData() {
+        return authenticationData;
+    }
+
+    @VisibleForTesting
+    protected AuthenticationDataSource getOriginalAuthData() {
+        return originalAuthData;
+    }
+
+    @VisibleForTesting
+    protected AuthenticationState getOriginalAuthState() {
+        return originalAuthState;
+    }
+
+    @VisibleForTesting
+    protected void setAuthRole(String authRole) {
+        this.authRole = authRole;
     }
 }

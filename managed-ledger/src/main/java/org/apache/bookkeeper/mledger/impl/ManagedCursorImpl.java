@@ -858,8 +858,8 @@ public class ManagedCursorImpl implements ManagedCursor {
                     ctx, maxPosition);
 
             if (!WAITING_READ_OP_UPDATER.compareAndSet(this, null, op)) {
-                callback.readEntriesFailed(new ManagedLedgerException("We can only have a single waiting callback"),
-                        ctx);
+                op.recycle();
+                callback.readEntriesFailed(new ManagedLedgerException.ConcurrentWaitCallbackException(), ctx);
                 return;
             }
 
@@ -940,7 +940,11 @@ public class ManagedCursorImpl implements ManagedCursor {
         if (log.isDebugEnabled()) {
             log.debug("[{}] [{}] Cancel pending read request", ledger.getName(), name);
         }
-        return WAITING_READ_OP_UPDATER.getAndSet(this, null) != null;
+        final OpReadEntry op = WAITING_READ_OP_UPDATER.getAndSet(this, null);
+        if (op != null) {
+            op.recycle();
+        }
+        return op != null;
     }
 
     public boolean hasPendingReadRequest() {
@@ -1427,25 +1431,32 @@ public class ManagedCursorImpl implements ManagedCursor {
 
         lock.readLock().lock();
         try {
-            individualDeletedMessages.forEach((r) -> {
-                try {
-                    if (r.isConnected(range)) {
-                        Range<PositionImpl> commonEntries = r.intersection(range);
-                        long commonCount = ledger.getNumberOfEntries(commonEntries);
-                        if (log.isDebugEnabled()) {
-                            log.debug("[{}] [{}] Discounting {} entries for already deleted range {}", ledger.getName(),
-                                    name, commonCount, commonEntries);
+            if (config.isUnackedRangesOpenCacheSetEnabled()) {
+                int cardinality = individualDeletedMessages.cardinality(
+                        range.lowerEndpoint().ledgerId, range.lowerEndpoint().entryId,
+                        range.upperEndpoint().ledgerId, range.upperEndpoint().entryId);
+                deletedEntries.addAndGet(cardinality);
+            } else {
+                individualDeletedMessages.forEach((r) -> {
+                    try {
+                        if (r.isConnected(range)) {
+                            Range<PositionImpl> commonEntries = r.intersection(range);
+                            long commonCount = ledger.getNumberOfEntries(commonEntries);
+                            if (log.isDebugEnabled()) {
+                                log.debug("[{}] [{}] Discounting {} entries for already deleted range {}",
+                                        ledger.getName(), name, commonCount, commonEntries);
+                            }
+                            deletedEntries.addAndGet(commonCount);
                         }
-                        deletedEntries.addAndGet(commonCount);
+                        return true;
+                    } finally {
+                        if (r.lowerEndpoint() instanceof PositionImplRecyclable) {
+                            ((PositionImplRecyclable) r.lowerEndpoint()).recycle();
+                            ((PositionImplRecyclable) r.upperEndpoint()).recycle();
+                        }
                     }
-                    return true;
-                } finally {
-                    if (r.lowerEndpoint() instanceof PositionImplRecyclable) {
-                        ((PositionImplRecyclable) r.lowerEndpoint()).recycle();
-                        ((PositionImplRecyclable) r.upperEndpoint()).recycle();
-                    }
-                }
-            }, recyclePositionRangeConverter);
+                }, recyclePositionRangeConverter);
+            }
         } finally {
             lock.readLock().unlock();
         }
@@ -1856,8 +1867,10 @@ public class ManagedCursorImpl implements ManagedCursor {
                 return;
 
             case NoLedger:
-                // We need to create a new ledger to write into
+                pendingMarkDeleteOps.add(mdEntry);
+                // We need to create a new ledger to write into.
                 startCreatingNewMetadataLedger();
+                break;
                 // fall through
             case SwitchingLedger:
                 pendingMarkDeleteOps.add(mdEntry);

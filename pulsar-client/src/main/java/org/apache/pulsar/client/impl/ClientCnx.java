@@ -22,6 +22,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static org.apache.pulsar.client.impl.TransactionMetaStoreHandler.getExceptionByServerError;
 import static org.apache.pulsar.common.util.Runnables.catchingAndLoggingThrowables;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Queues;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
@@ -99,7 +100,7 @@ import org.slf4j.LoggerFactory;
 public class ClientCnx extends PulsarHandler {
 
     protected final Authentication authentication;
-    private State state;
+    protected State state;
 
     @Getter
     private final ConcurrentLongHashMap<TimedCompletableFuture<? extends Object>> pendingRequests =
@@ -110,12 +111,14 @@ public class ClientCnx extends PulsarHandler {
     // LookupRequests that waiting in client side.
     private final Queue<Pair<Long, Pair<ByteBuf, TimedCompletableFuture<LookupDataResult>>>> waitingLookupRequests;
 
-    private final ConcurrentLongHashMap<ProducerImpl<?>> producers =
+    @VisibleForTesting
+    final ConcurrentLongHashMap<ProducerImpl<?>> producers =
             ConcurrentLongHashMap.<ProducerImpl<?>>newBuilder()
                     .expectedItems(16)
                     .concurrencyLevel(1)
                     .build();
-    private final ConcurrentLongHashMap<ConsumerImpl<?>> consumers =
+    @VisibleForTesting
+    final ConcurrentLongHashMap<ConsumerImpl<?>> consumers =
             ConcurrentLongHashMap.<ConsumerImpl<?>>newBuilder()
                     .expectedItems(16)
                     .concurrencyLevel(1)
@@ -142,7 +145,7 @@ public class ClientCnx extends PulsarHandler {
 
     private final int maxNumberOfRejectedRequestPerConnection;
     private final int rejectedRequestResetTimeSec = 60;
-    private final int protocolVersion;
+    protected final int protocolVersion;
     private final long operationTimeoutMs;
 
     protected String proxyToTargetBrokerAddress = null;
@@ -158,7 +161,10 @@ public class ClientCnx extends PulsarHandler {
     protected AuthenticationDataProvider authenticationDataProvider;
     private TransactionBufferHandler transactionBufferHandler;
 
-    enum State {
+    @Getter
+    private long lastDisconnectedTimestamp;
+
+    protected enum State {
         None, SentConnectFrame, Ready, Failed, Connecting
     }
 
@@ -262,6 +268,7 @@ public class ClientCnx extends PulsarHandler {
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
+        lastDisconnectedTimestamp = System.currentTimeMillis();
         log.info("{} Disconnected", ctx.channel());
         if (!connectionFuture.isDone()) {
             connectionFuture.completeExceptionally(new PulsarClientException("Connection already closed"));
@@ -271,7 +278,11 @@ public class ClientCnx extends PulsarHandler {
                 "Disconnected from server at " + ctx.channel().remoteAddress());
 
         // Fail out all the pending ops
-        pendingRequests.forEach((key, future) -> future.completeExceptionally(e));
+        pendingRequests.forEach((key, future) -> {
+            if (pendingRequests.remove(key, future) && !future.isDone()) {
+                future.completeExceptionally(e);
+            }
+        });
         waitingLookupRequests.forEach(pair -> pair.getRight().getRight().completeExceptionally(e));
 
         // Notify all attached producers/consumers so they have a chance to reconnect
@@ -279,7 +290,6 @@ public class ClientCnx extends PulsarHandler {
         consumers.forEach((id, consumer) -> consumer.connectionClosed(this));
         transactionMetaStoreHandlers.forEach((id, handler) -> handler.connectionClosed(this));
 
-        pendingRequests.clear();
         waitingLookupRequests.clear();
 
         producers.clear();
@@ -719,7 +729,7 @@ public class ClientCnx extends PulsarHandler {
     protected void handleCloseProducer(CommandCloseProducer closeProducer) {
         log.info("[{}] Broker notification of Closed producer: {}", remoteAddress, closeProducer.getProducerId());
         final long producerId = closeProducer.getProducerId();
-        ProducerImpl<?> producer = producers.get(producerId);
+        ProducerImpl<?> producer = producers.remove(producerId);
         if (producer != null) {
             producer.connectionClosed(this);
         } else {
@@ -731,7 +741,7 @@ public class ClientCnx extends PulsarHandler {
     protected void handleCloseConsumer(CommandCloseConsumer closeConsumer) {
         log.info("[{}] Broker notification of Closed consumer: {}", remoteAddress, closeConsumer.getConsumerId());
         final long consumerId = closeConsumer.getConsumerId();
-        ConsumerImpl<?> consumer = consumers.get(consumerId);
+        ConsumerImpl<?> consumer = consumers.remove(consumerId);
         if (consumer != null) {
             consumer.connectionClosed(this);
         } else {
@@ -771,7 +781,7 @@ public class ClientCnx extends PulsarHandler {
                 future.completeExceptionally(new PulsarClientException.TooManyRequestsException(String.format(
                     "Requests number out of config: There are {%s} lookup requests outstanding and {%s} requests"
                             + " pending.",
-                    pendingLookupRequestSemaphore.availablePermits(),
+                    pendingLookupRequestSemaphore.getQueueLength(),
                     waitingLookupRequests.size())));
             }
         }
@@ -874,8 +884,7 @@ public class ClientCnx extends PulsarHandler {
         if (flush) {
             ctx.writeAndFlush(requestMessage).addListener(writeFuture -> {
                 if (!writeFuture.isSuccess()) {
-                    CompletableFuture<?> newFuture = pendingRequests.remove(requestId);
-                    if (newFuture != null && !newFuture.isDone()) {
+                    if (pendingRequests.remove(requestId, future) && !future.isDone()) {
                         log.warn("{} Failed to send {} to broker: {}", ctx.channel(),
                                 requestType.getDescription(), writeFuture.cause().getMessage());
                         future.completeExceptionally(writeFuture.cause());
@@ -1151,6 +1160,13 @@ public class ClientCnx extends PulsarHandler {
 
     public void close() {
        if (ctx != null) {
+           ctx.close();
+       }
+    }
+
+    protected void closeWithException(Throwable e) {
+       if (ctx != null) {
+           connectionFuture.completeExceptionally(e);
            ctx.close();
        }
     }
