@@ -847,6 +847,16 @@ public class KubernetesRuntime implements Runtime {
     private List<String> getDownloadCommand(String tenant, String namespace, String name, String userCodeFilePath) {
 
         // add auth plugin and parameters if necessary
+        log.info("1 authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
+        log.info("1 *********************************************");
+        log.info("1 isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
+        log.info("1 *********************************************");
+        log.info("1 authConfig.getClientAuthenticationPlugin() is : {}", authConfig.getClientAuthenticationPlugin());
+        log.info("1 *********************************************");
+        log.info("1 authConfig.getClientAuthenticationParameters() is : {}",authConfig.getClientAuthenticationParameters());
+        log.info("1 *********************************************");
+        log.info("1 instanceConfig.getFunctionAuthenticationSpec() is : {}", instanceConfig.getFunctionAuthenticationSpec());
+        
         if (authenticationEnabled && authConfig != null) {
             if (isNotBlank(authConfig.getClientAuthenticationPlugin())
                     && isNotBlank(authConfig.getClientAuthenticationParameters())
@@ -889,6 +899,17 @@ public class KubernetesRuntime implements Runtime {
     }
 
     private List<String> getPackageDownloadCommand(String packageName, String userCodeFilePath) {
+
+        log.info("2 authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
+        log.info("2 *********************************************");
+        log.info("2 isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
+        log.info("2 *********************************************");
+        log.info("2 authConfig.getClientAuthenticationPlugin() is : {}", authConfig.getClientAuthenticationPlugin());
+        log.info("2 *********************************************");
+        log.info("2 authConfig.getClientAuthenticationParameters() is : {}",authConfig.getClientAuthenticationParameters());
+        log.info("2 *********************************************");
+        log.info("2 instanceConfig.getFunctionAuthenticationSpec() is : {}", instanceConfig.getFunctionAuthenticationSpec());
+
         // add auth plugin and parameters if necessary
         if (authenticationEnabled && authConfig != null) {
             if (isNotBlank(authConfig.getClientAuthenticationPlugin())

@@ -77,8 +77,8 @@ flexible messaging model and an intuitive client API.</description>
   </issueManagement>
 
   <properties>
-    <maven.compiler.source>8</maven.compiler.source>
-    <maven.compiler.target>8</maven.compiler.target>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
 
     <!--config keys to configure test selection -->
     <include>**/Test*.java,**/*Test.java,**/*Tests.java,**/*TestCase.java</include>
@@ -1894,9 +1894,9 @@ flexible messaging model and an intuitive client API.</description>
 
   <profiles>
     <profile>
-      <id>jdk11</id>
+      <id>jdk17</id>
       <activation>
-        <jdk>[11,)</jdk>
+        <jdk>[17,)</jdk>
       </activation>
       <properties>
         <!-- prevents silent NoSuchMethodErrors that happen at runtime on Java 8 -->
