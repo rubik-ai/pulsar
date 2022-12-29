@@ -36,6 +36,7 @@ import org.apache.bookkeeper.clients.StorageClientBuilder;
 import org.apache.bookkeeper.clients.admin.StorageAdminClient;
 import org.apache.bookkeeper.clients.config.StorageClientSettings;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.distributedlog.DistributedLogConfiguration;
 import org.apache.distributedlog.api.namespace.Namespace;
 import org.apache.distributedlog.api.namespace.NamespaceBuilder;
@@ -126,8 +127,12 @@ public class PulsarWorkerService implements WorkerService {
         this.clientCreator = new PulsarClientCreator() {
             @Override
             public PulsarAdmin newPulsarAdmin(String pulsarServiceUrl, WorkerConfig workerConfig) {
+                log.info("*************newpulsaradmin******************");
+                log.info("workerConfig is {}",workerConfig);
+                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is", workerConfig.isBrokerClientAuthenticationEnabled());
                 // using isBrokerClientAuthenticationEnabled instead of isAuthenticationEnabled in function-worker
                 if (workerConfig.isBrokerClientAuthenticationEnabled()) {
+                    log.info("newPulsarAdmin() isBrokerClientAuthenticationEnabled: YES");
                     return WorkerUtils.getPulsarAdminClient(
                         pulsarServiceUrl,
                         workerConfig.getBrokerClientAuthenticationPlugin(),
@@ -137,6 +142,7 @@ public class PulsarWorkerService implements WorkerService {
                         workerConfig.isTlsEnableHostnameVerification(),
                         workerConfig);
                 } else {
+                    log.info("newPulsarAdmin() isBrokerClientAuthenticationEnabled: NO");
                     return WorkerUtils.getPulsarAdminClient(
                             pulsarServiceUrl,
                             null,
@@ -150,8 +156,12 @@ public class PulsarWorkerService implements WorkerService {
 
             @Override
             public PulsarClient newPulsarClient(String pulsarServiceUrl, WorkerConfig workerConfig) {
+                log.info("***********newpulsarclient********************");
+                log.info("workerConfig is {}",workerConfig);
+                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is", workerConfig.isBrokerClientAuthenticationEnabled());
                 // using isBrokerClientAuthenticationEnabled instead of isAuthenticationEnabled in function-worker
                 if (workerConfig.isBrokerClientAuthenticationEnabled()) {
+                    log.info("newClientAdmin() isBrokerClientAuthenticationEnabled: YES");
                     return WorkerUtils.getPulsarClient(
                         pulsarServiceUrl,
                         workerConfig.getBrokerClientAuthenticationPlugin(),
@@ -162,6 +172,7 @@ public class PulsarWorkerService implements WorkerService {
                         workerConfig.isTlsEnableHostnameVerification(),
                         workerConfig);
                 } else {
+                    log.info("newClientAdmin() isBrokerClientAuthenticationEnabled: NO");
                     return WorkerUtils.getPulsarClient(
                             pulsarServiceUrl,
                             null,
@@ -299,6 +310,12 @@ public class PulsarWorkerService implements WorkerService {
                              PulsarResources pulsarResources,
                              InternalConfigurationData internalConf) throws Exception {
 
+        LOG.info("************************************");
+        LOG.info("pulsar service: broker config={}", ReflectionToStringBuilder.toString(brokerConfig));
+        LOG.info("************************************");
+        LOG.info("************************************");
+        LOG.info("pulsar service: worker config={}", workerConfig);
+        LOG.info("************************************");
         String namespace = workerConfig.getPulsarFunctionsNamespace();
         String[] a = workerConfig.getPulsarFunctionsNamespace().split("/");
         String tenant = a[0];

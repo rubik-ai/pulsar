@@ -56,6 +56,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.Response;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.pulsar.functions.auth.KubernetesFunctionAuthProvider;
 import org.apache.pulsar.functions.instance.AuthenticationConfig;
 import org.apache.pulsar.functions.instance.InstanceConfig;
@@ -521,6 +522,9 @@ public class KubernetesRuntime implements Runtime {
     private void submitStatefulSet() throws Exception {
         final V1StatefulSet statefulSet = createStatefulSet();
         // Configure function authentication if needed
+        log.info("*************************");
+        log.info("submitStatefulSet authenticationEnabled {}",authenticationEnabled);
+        log.info("submitStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
         if (authenticationEnabled) {
             functionAuthDataCacheProvider.ifPresent(kubernetesFunctionAuthProvider -> kubernetesFunctionAuthProvider.configureAuthDataStatefulSet(
                     statefulSet, Optional.ofNullable(getFunctionAuthData(Optional.ofNullable(instanceConfig.getFunctionAuthenticationSpec())))));

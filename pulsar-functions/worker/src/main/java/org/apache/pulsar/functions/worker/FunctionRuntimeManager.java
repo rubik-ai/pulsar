@@ -161,6 +161,16 @@ public class FunctionRuntimeManager implements AutoCloseable{
 
         Optional<FunctionAuthProvider> functionAuthProvider = Optional.empty();
         AuthenticationConfig authConfig = null;
+        log.info("**************************");
+        log.info("3 workerConfig is {}",workerConfig);
+        log.info("3 workerConfig.isAuthenticationEnabled() is {}",workerConfig.isAuthenticationEnabled());
+        log.info("3 workerConfig.getBrokerClientAuthenticationPlugin() is {}",workerConfig.getBrokerClientAuthenticationPlugin());
+        log.info("3 workerConfig.getBrokerClientAuthenticationParameters() is {} ",workerConfig.getBrokerClientAuthenticationParameters());
+        log.info("3 workerConfig.getTlsTrustCertsFilePath() is {}",workerConfig.getTlsTrustCertsFilePath());
+        log.info("3 workerConfig.isUseTls() is {} ",workerConfig.isUseTls());
+        log.info("3 workerConfig.isTlsAllowInsecureConnection() is {}",workerConfig.isTlsAllowInsecureConnection());
+        log.info("3 workerConfig.isTlsEnableHostnameVerification() is {}",workerConfig.isTlsEnableHostnameVerification());
+        log.info("**************************");
         if (workerConfig.isAuthenticationEnabled()) {
             authConfig = AuthenticationConfig.builder()
                     .clientAuthenticationPlugin(workerConfig.getBrokerClientAuthenticationPlugin())
@@ -176,6 +186,8 @@ public class FunctionRuntimeManager implements AutoCloseable{
                 functionAuthProvider = Optional.of(FunctionAuthProvider.getAuthProvider(workerConfig.getFunctionAuthProviderClassName()));
             }
         }
+        log.info("authConfig is {}",authConfig);
+        log.info("functionAuthProvider is {}",functionAuthProvider);
 
         // initialize the runtime customizer
         Optional<RuntimeCustomizer> runtimeCustomizer = Optional.empty();

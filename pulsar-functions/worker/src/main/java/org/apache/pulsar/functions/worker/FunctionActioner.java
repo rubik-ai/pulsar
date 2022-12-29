@@ -33,6 +33,7 @@ import com.google.common.io.RecursiveDeleteOption;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.distributedlog.api.namespace.Namespace;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -153,6 +154,8 @@ public class FunctionActioner {
         FunctionMetaData functionMetaData = instance.getFunctionMetaData();
         int instanceId = instance.getInstanceId();
 
+        log.info("*******************************");
+        log.info("instance is {}", ReflectionToStringBuilder.toString(instance));
         FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder(functionMetaData.getFunctionDetails());
 
         // check to make sure functionAuthenticationSpec has any data and authentication is enabled.
