@@ -235,8 +235,11 @@ public class KubernetesRuntime implements Runtime {
                 break;
         }
 
+        log.info("*************inside kubernetruntime.java******************");
+        log.info("nstanceConfig.getFunctionAuthenticationSpec()",instanceConfig.getFunctionAuthenticationSpec());
         this.authConfig = authConfig;
-
+        log.info("***********inside constructor**********");
+        log.info("authConfig is {}",this.authConfig );
         this.functionAuthDataCacheProvider = functionAuthDataCacheProvider;
 
         this.grpcPort = grpcPort;
@@ -281,7 +284,7 @@ public class KubernetesRuntime implements Runtime {
                         functionInstanceClassPath,
                         true,
                         pulsarAdminUrl));
-
+        log.info("this.processArgs.addAll is {}", ReflectionToStringBuilder.toString(this.processArgs));
         doChecks(instanceConfig.getFunctionDetails(), this.jobName);
     }
 
@@ -525,6 +528,17 @@ public class KubernetesRuntime implements Runtime {
         log.info("*************************");
         log.info("submitStatefulSet authenticationEnabled {}",authenticationEnabled);
         log.info("submitStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
+        log.info("submitStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        log.info("submitStatefulSet authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
+        log.info("submitStatefulSet *********************************************");
+        log.info("submitStatefulSet isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
+        log.info("submitStatefulSet *********************************************");
+        log.info("submitStatefulSet authConfig.getClientAuthenticationPlugin() is : {}", authConfig.getClientAuthenticationPlugin());
+        log.info("submitStatefulSet *********************************************");
+        log.info("submitStatefulSet authConfig.getClientAuthenticationParameters() is : {}",authConfig.getClientAuthenticationParameters());
+        log.info("submitStatefulSet *********************************************");
+        log.info("submitStatefulSet instanceConfig.getFunctionAuthenticationSpec() is : {}", instanceConfig.getFunctionAuthenticationSpec());
+
         if (authenticationEnabled) {
             functionAuthDataCacheProvider.ifPresent(kubernetesFunctionAuthProvider -> kubernetesFunctionAuthProvider.configureAuthDataStatefulSet(
                     statefulSet, Optional.ofNullable(getFunctionAuthData(Optional.ofNullable(instanceConfig.getFunctionAuthenticationSpec())))));
@@ -952,6 +966,20 @@ public class KubernetesRuntime implements Runtime {
 
     @VisibleForTesting
     V1StatefulSet createStatefulSet() {
+        log.info("*************************");
+        log.info("createStatefulSet authenticationEnabled {}",authenticationEnabled);
+        log.info("createStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
+        log.info("createStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        log.info("createStatefulSet authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
+        log.info("createStatefulSet *********************************************");
+        log.info("createStatefulSet isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
+        log.info("createStatefulSet *********************************************");
+        log.info("createStatefulSet authConfig.getClientAuthenticationPlugin() is : {}", authConfig.getClientAuthenticationPlugin());
+        log.info("createStatefulSet *********************************************");
+        log.info("createStatefulSet authConfig.getClientAuthenticationParameters() is : {}",authConfig.getClientAuthenticationParameters());
+        log.info("createStatefulSet *********************************************");
+        log.info("createStatefulSet instanceConfig.getFunctionAuthenticationSpec() is : {}", instanceConfig.getFunctionAuthenticationSpec());
+
         final String jobName = createJobName(instanceConfig.getFunctionDetails(), this.jobName);
 
         final V1StatefulSet statefulSet = new V1StatefulSet();

@@ -123,6 +123,7 @@ public class FunctionActioner {
                     File pkgFile = getBuiltinArchive(FunctionDetails.newBuilder(functionMetaData.getFunctionDetails()));
                     packageFile = pkgFile.getAbsolutePath();
                 } else {
+
                     File pkgDir = new File(workerConfig.getDownloadDirectory(),
                             getDownloadPackagePath(functionMetaData, instanceId));
                     pkgDir.mkdirs();

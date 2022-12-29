@@ -33,6 +33,7 @@ import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.pulsar.common.functions.Resources;
 import org.apache.pulsar.functions.auth.FunctionAuthProvider;
 import org.apache.pulsar.functions.auth.KubernetesFunctionAuthProvider;
@@ -140,6 +141,8 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
                            Optional<FunctionAuthProvider> functionAuthProvider,
                            Optional<RuntimeCustomizer> runtimeCustomizer) {
 
+        log.info("******initialize******start*************");
+        log.info("authenticationConfig is {}",authenticationConfig);
         KubernetesRuntimeFactoryConfig factoryConfig = RuntimeUtils.getRuntimeFunctionConfig(
                 workerConfig.getFunctionRuntimeFactoryConfigs(), KubernetesRuntimeFactoryConfig.class);
 
@@ -241,6 +244,7 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         }
 
         // make sure the provided class is a kubernetes auth provider
+        log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider));
         if (functionAuthProvider.isPresent()) {
             if (!(functionAuthProvider.get() instanceof KubernetesFunctionAuthProvider)) {
                 throw new IllegalArgumentException("Function authentication provider "
@@ -258,6 +262,9 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         this.metricsPort = factoryConfig.getMetricsPort();
         this.narExtractionDirectory = factoryConfig.getNarExtractionDirectory();
         this.functionInstanceClassPath = factoryConfig.getFunctionInstanceClassPath();
+
+        log.info("*****initialise***end**********");
+        log.info("this.authConfig {}",this.authConfig);
     }
 
     @Override
@@ -279,6 +286,10 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         }
 
         // adjust the auth config to support auth
+        log.info("*********inside createContainer**********");
+        log.info("authenticationEnabled is {}",authenticationEnabled);
+        log.info("authProvider is {} ",ReflectionToStringBuilder.toString(authProvider));
+        log.info("instanceConfig.getFunctionAuthenticationSpec()",ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
         if (authenticationEnabled) {
             authProvider.ifPresent(kubernetesFunctionAuthProvider ->
                     kubernetesFunctionAuthProvider.configureAuthenticationConfig(authConfig,

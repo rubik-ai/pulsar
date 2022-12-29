@@ -216,6 +216,7 @@ public class FunctionRuntimeManager implements AutoCloseable{
                 throw new RuntimeException("A Function Runtime Factory needs to be set");
             }
         }
+
         // initialize runtime
         this.runtimeFactory.initialize(workerConfig, authConfig,
                 secretsProviderConfigurator, connectorsManager,
