@@ -246,7 +246,7 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         // make sure the provided class is a kubernetes auth provider
         log.info("functionAuthProvider PRESENT? {}", functionAuthProvider.isPresent());
         if (functionAuthProvider.isPresent()) {
-            log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider));
+            log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider.get()));
             if (!(functionAuthProvider.get() instanceof KubernetesFunctionAuthProvider)) {
                 throw new IllegalArgumentException("Function authentication provider "
                         + functionAuthProvider.get().getClass().getName() + " must implement KubernetesFunctionAuthProvider");
@@ -290,7 +290,7 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         log.info("*********inside createContainer**********");
         log.info("authenticationEnabled is {}",authenticationEnabled);
         if (authProvider.isPresent()){
-            log.info("authProvider is {} ",ReflectionToStringBuilder.toString(authProvider));
+            log.info("authProvider is {} ",ReflectionToStringBuilder.toString(authProvider.get()));
         }else {
             log.info("authProvider is NOT PRESENT");
         }

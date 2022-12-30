@@ -129,7 +129,7 @@ public class PulsarWorkerService implements WorkerService {
             public PulsarAdmin newPulsarAdmin(String pulsarServiceUrl, WorkerConfig workerConfig) {
                 log.info("*************newpulsaradmin******************");
                 log.info("workerConfig is {}",workerConfig);
-                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is", workerConfig.isBrokerClientAuthenticationEnabled());
+                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is {}", workerConfig.isBrokerClientAuthenticationEnabled());
                 // using isBrokerClientAuthenticationEnabled instead of isAuthenticationEnabled in function-worker
                 if (workerConfig.isBrokerClientAuthenticationEnabled()) {
                     log.info("newPulsarAdmin() isBrokerClientAuthenticationEnabled: YES");
@@ -158,7 +158,7 @@ public class PulsarWorkerService implements WorkerService {
             public PulsarClient newPulsarClient(String pulsarServiceUrl, WorkerConfig workerConfig) {
                 log.info("***********newpulsarclient********************");
                 log.info("workerConfig is {}",workerConfig);
-                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is", workerConfig.isBrokerClientAuthenticationEnabled());
+                log.info("workerConfig.isBrokerClientAuthenticationEnabled() is {}", workerConfig.isBrokerClientAuthenticationEnabled());
                 // using isBrokerClientAuthenticationEnabled instead of isAuthenticationEnabled in function-worker
                 if (workerConfig.isBrokerClientAuthenticationEnabled()) {
                     log.info("newClientAdmin() isBrokerClientAuthenticationEnabled: YES");

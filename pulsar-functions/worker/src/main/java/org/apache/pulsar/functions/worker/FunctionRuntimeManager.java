@@ -188,7 +188,9 @@ public class FunctionRuntimeManager implements AutoCloseable{
             }
         }
         log.info("authConfig is {}",authConfig);
-        log.info("functionAuthProvider is {}", ReflectionToStringBuilder.toString(functionAuthProvider));
+        if(functionAuthProvider.isPresent()) {
+            log.info("functionAuthProvider is {}", ReflectionToStringBuilder.toString(functionAuthProvider.get()));
+        }
 
         // initialize the runtime customizer
         Optional<RuntimeCustomizer> runtimeCustomizer = Optional.empty();
