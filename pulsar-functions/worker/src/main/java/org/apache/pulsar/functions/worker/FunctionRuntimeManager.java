@@ -42,6 +42,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
 import org.apache.distributedlog.api.namespace.Namespace;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
@@ -187,7 +188,7 @@ public class FunctionRuntimeManager implements AutoCloseable{
             }
         }
         log.info("authConfig is {}",authConfig);
-        log.info("functionAuthProvider is {}",functionAuthProvider);
+        log.info("functionAuthProvider is {}", ReflectionToStringBuilder.toString(functionAuthProvider));
 
         // initialize the runtime customizer
         Optional<RuntimeCustomizer> runtimeCustomizer = Optional.empty();

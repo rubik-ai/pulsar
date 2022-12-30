@@ -244,6 +244,10 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         }
 
         // make sure the provided class is a kubernetes auth provider
+<<<<<<< Updated upstream
+=======
+        log.info("functionAuthProvider PRESENT? {}", functionAuthProvider.isPresent());
+>>>>>>> Stashed changes
         if (functionAuthProvider.isPresent()) {
             log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider));
             if (!(functionAuthProvider.get() instanceof KubernetesFunctionAuthProvider)) {
