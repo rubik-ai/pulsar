@@ -244,8 +244,8 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         }
 
         // make sure the provided class is a kubernetes auth provider
-        log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider));
         if (functionAuthProvider.isPresent()) {
+            log.info("functionAuthProvider {}", ReflectionToStringBuilder.toString(functionAuthProvider));
             if (!(functionAuthProvider.get() instanceof KubernetesFunctionAuthProvider)) {
                 throw new IllegalArgumentException("Function authentication provider "
                         + functionAuthProvider.get().getClass().getName() + " must implement KubernetesFunctionAuthProvider");
@@ -288,8 +288,16 @@ public class KubernetesRuntimeFactory implements RuntimeFactory {
         // adjust the auth config to support auth
         log.info("*********inside createContainer**********");
         log.info("authenticationEnabled is {}",authenticationEnabled);
-        log.info("authProvider is {} ",ReflectionToStringBuilder.toString(authProvider));
-        log.info("instanceConfig.getFunctionAuthenticationSpec()",ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        if (authProvider.isPresent()){
+            log.info("authProvider is {} ",ReflectionToStringBuilder.toString(authProvider));
+        }else {
+            log.info("authProvider is NOT PRESENT");
+        }
+        if(instanceConfig != null && instanceConfig.getFunctionAuthenticationSpec() != null){
+            log.info("instanceConfig.getFunctionAuthenticationSpec()",ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        } else {
+            log.info("instanceConfig or getFunctionAuthenticationSpec is NULL");
+        }
         if (authenticationEnabled) {
             authProvider.ifPresent(kubernetesFunctionAuthProvider ->
                     kubernetesFunctionAuthProvider.configureAuthenticationConfig(authConfig,

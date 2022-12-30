@@ -236,7 +236,7 @@ public class KubernetesRuntime implements Runtime {
         }
 
         log.info("*************inside kubernetruntime.java******************");
-        log.info("nstanceConfig.getFunctionAuthenticationSpec()",instanceConfig.getFunctionAuthenticationSpec());
+        log.info("instanceConfig.getFunctionAuthenticationSpec()",instanceConfig.getFunctionAuthenticationSpec());
         this.authConfig = authConfig;
         log.info("***********inside constructor**********");
         log.info("authConfig is {}",this.authConfig );
@@ -284,7 +284,9 @@ public class KubernetesRuntime implements Runtime {
                         functionInstanceClassPath,
                         true,
                         pulsarAdminUrl));
-        log.info("this.processArgs.addAll is {}", ReflectionToStringBuilder.toString(this.processArgs));
+//        if (this.processArgs != null){
+//            log.info("this.processArgs.addAll is {}", ReflectionToStringBuilder.toString(this.processArgs));
+//        }
         doChecks(instanceConfig.getFunctionDetails(), this.jobName);
     }
 
@@ -969,7 +971,9 @@ public class KubernetesRuntime implements Runtime {
         log.info("*************************");
         log.info("createStatefulSet authenticationEnabled {}",authenticationEnabled);
         log.info("createStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
-        log.info("createStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        if (instanceConfig != null && instanceConfig.getFunctionAuthenticationSpec() != null){
+            log.info("createStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        }
         log.info("createStatefulSet authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
         log.info("createStatefulSet *********************************************");
         log.info("createStatefulSet isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
