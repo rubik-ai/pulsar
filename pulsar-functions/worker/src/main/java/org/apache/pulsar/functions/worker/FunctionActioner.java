@@ -100,6 +100,16 @@ public class FunctionActioner {
 
     public void startFunction(FunctionRuntimeInfo functionRuntimeInfo) {
         try {
+            log.info("**************************");
+            log.info("4 workerConfig is {}",workerConfig);
+            log.info("4 workerConfig.isAuthenticationEnabled() is {}",workerConfig.isAuthenticationEnabled());
+            log.info("4 workerConfig.getBrokerClientAuthenticationPlugin() is {}",workerConfig.getBrokerClientAuthenticationPlugin());
+            log.info("4 workerConfig.getBrokerClientAuthenticationParameters() is {} ",workerConfig.getBrokerClientAuthenticationParameters());
+            log.info("4 workerConfig.getTlsTrustCertsFilePath() is {}",workerConfig.getTlsTrustCertsFilePath());
+            log.info("4 workerConfig.isUseTls() is {} ",workerConfig.isUseTls());
+            log.info("4 workerConfig.isTlsAllowInsecureConnection() is {}",workerConfig.isTlsAllowInsecureConnection());
+            log.info("4 workerConfig.isTlsEnableHostnameVerification() is {}",workerConfig.isTlsEnableHostnameVerification());
+            log.info("**************************");
             FunctionMetaData functionMetaData = functionRuntimeInfo.getFunctionInstance().getFunctionMetaData();
             FunctionDetails functionDetails = functionMetaData.getFunctionDetails();
             int instanceId = functionRuntimeInfo.getFunctionInstance().getInstanceId();
@@ -159,11 +169,22 @@ public class FunctionActioner {
         log.info("instance is {}", ReflectionToStringBuilder.toString(instance));
         FunctionDetails.Builder functionDetailsBuilder = FunctionDetails.newBuilder(functionMetaData.getFunctionDetails());
 
+        log.info("**************************");
+        log.info("5 workerConfig is {}",workerConfig);
+        log.info("5 workerConfig.isAuthenticationEnabled() is {}",workerConfig.isAuthenticationEnabled());
+        log.info("5 workerConfig.getBrokerClientAuthenticationPlugin() is {}",workerConfig.getBrokerClientAuthenticationPlugin());
+        log.info("5 workerConfig.getBrokerClientAuthenticationParameters() is {} ",workerConfig.getBrokerClientAuthenticationParameters());
+        log.info("5 workerConfig.getTlsTrustCertsFilePath() is {}",workerConfig.getTlsTrustCertsFilePath());
+        log.info("5 workerConfig.isUseTls() is {} ",workerConfig.isUseTls());
+        log.info("5 workerConfig.isTlsAllowInsecureConnection() is {}",workerConfig.isTlsAllowInsecureConnection());
+        log.info("5 workerConfig.isTlsEnableHostnameVerification() is {}",workerConfig.isTlsEnableHostnameVerification());
+        log.info("**************************");
         // check to make sure functionAuthenticationSpec has any data and authentication is enabled.
         // If not set to null, since for protobuf,
         // even if the field is not set its not going to be null. Have to use the "has" method to check
         Function.FunctionAuthenticationSpec functionAuthenticationSpec = null;
         if (workerConfig.isAuthenticationEnabled() && instance.getFunctionMetaData().hasFunctionAuthSpec()) {
+            log.info("innside if block {}",instance.getFunctionMetaData().getFunctionAuthSpec());
             functionAuthenticationSpec = instance.getFunctionMetaData().getFunctionAuthSpec();
         }
 

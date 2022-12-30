@@ -284,9 +284,6 @@ public class KubernetesRuntime implements Runtime {
                         functionInstanceClassPath,
                         true,
                         pulsarAdminUrl));
-//        if (this.processArgs != null){
-//            log.info("this.processArgs.addAll is {}", ReflectionToStringBuilder.toString(this.processArgs));
-//        }
         doChecks(instanceConfig.getFunctionDetails(), this.jobName);
     }
 
@@ -529,8 +526,13 @@ public class KubernetesRuntime implements Runtime {
         // Configure function authentication if needed
         log.info("*************************");
         log.info("submitStatefulSet authenticationEnabled {}",authenticationEnabled);
-        log.info("submitStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
-        log.info("submitStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        if (instanceConfig != null && instanceConfig.getFunctionAuthenticationSpec() != null){
+            log.info("instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
+            log.info("createStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        }
+        else {
+            log.info("createStatefulSet instanceConfig or getFunctionAuthenticationSpec is NULL");
+        }
         log.info("submitStatefulSet authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
         log.info("submitStatefulSet *********************************************");
         log.info("submitStatefulSet isNotBlank(authConfig.getClientAuthenticationPlugin(): {}", isNotBlank(authConfig.getClientAuthenticationPlugin() ));
@@ -970,9 +972,12 @@ public class KubernetesRuntime implements Runtime {
     V1StatefulSet createStatefulSet() {
         log.info("*************************");
         log.info("createStatefulSet authenticationEnabled {}",authenticationEnabled);
-        log.info("createStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
         if (instanceConfig != null && instanceConfig.getFunctionAuthenticationSpec() != null){
+            log.info("createStatefulSet instanceConfig {}", ReflectionToStringBuilder.toString(instanceConfig));
             log.info("createStatefulSet instanceConfigg get function spec {}", ReflectionToStringBuilder.toString(instanceConfig.getFunctionAuthenticationSpec()));
+        }
+        else {
+            log.info("createStatefulSet instanceConfig or getFunctionAuthenticationSpec is NULL");
         }
         log.info("createStatefulSet authenticationEnabled and authConfig is: {} , {}",authenticationEnabled,authConfig);
         log.info("createStatefulSet *********************************************");
