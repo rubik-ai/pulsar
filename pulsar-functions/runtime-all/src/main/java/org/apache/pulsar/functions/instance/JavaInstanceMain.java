@@ -57,7 +57,9 @@ public class JavaInstanceMain {
     public JavaInstanceMain() { }
 
     public static void main(String[] args) throws Exception {
-
+        for (String arg: args) {
+            System.out.print(arg + " ");
+        }
         // Set root classloader to current classpath
         ClassLoader root = Thread.currentThread().getContextClassLoader();
 

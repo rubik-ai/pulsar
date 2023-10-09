@@ -147,7 +147,9 @@ public class JavaInstanceStarter implements AutoCloseable {
         JCommander jcommander = new JCommander(this);
         // parse args by JCommander
         jcommander.parse(args);
-
+        for (String arg: args) {
+            System.out.print(arg + " ");
+        }
         InstanceConfig instanceConfig = new InstanceConfig();
         instanceConfig.setFunctionId(functionId);
         instanceConfig.setFunctionVersion(functionVersion);
