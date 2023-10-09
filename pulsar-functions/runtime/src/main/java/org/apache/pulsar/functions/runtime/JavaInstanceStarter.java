@@ -171,6 +171,9 @@ public class JavaInstanceStarter implements AutoCloseable {
 
     public void start(String[] args, ClassLoader functionInstanceClassLoader, ClassLoader rootClassLoader)
             throws Exception {
+        for (String arg: args) {
+            System.out.print(arg + " ");
+        }
         Thread.currentThread().setContextClassLoader(functionInstanceClassLoader);
 
         JCommander jcommander = new JCommander(this);
