@@ -72,9 +72,11 @@ public class JavaInstanceMain {
     }
 
     public static void main(String[] args) throws Exception {
+        System.out.println("JavaInstanceMain");
         for (String arg: args) {
             System.out.print(arg + " ");
         }
+        System.out.println(" ");
         // Set root classloader to current classpath
         ClassLoader root = Thread.currentThread().getContextClassLoader();
 

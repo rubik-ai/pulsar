@@ -124,7 +124,7 @@ flexible messaging model and an intuitive client API.</description>
     <jacoco.report.skip>true</jacoco.report.skip>
     <testHeapDumpPath>/tmp</testHeapDumpPath>
     <surefire.shutdown>kill</surefire.shutdown>
-    <docker.organization>apachepulsar</docker.organization>
+    <docker.organization>rubiklabs</docker.organization>
     <skipSourceReleaseAssembly>false</skipSourceReleaseAssembly>
     <skipBuildDistribution>false</skipBuildDistribution>
     <shadePluginPhase>package</shadePluginPhase>
@@ -301,6 +301,9 @@ flexible messaging model and an intuitive client API.</description>
     <extra-enforcer-rules.version>1.6.1</extra-enforcer-rules.version>
     <oshi.version>6.4.0</oshi.version>
 
+<!--    <pulsar.basedir>/Users/moderntest/ModernData/pulsar</pulsar.basedir>-->
+    <depot.service>0.1.9</depot.service>
+    <dataos.releases.repo>https://mymavenrepo.com/repo/1SYCUKwoIEm7SCxJ4is0/</dataos.releases.repo>
     <!-- Used to configure rename.netty.native. Libs -->
     <rename.netty.native.libs>rename-netty-native-libs.sh</rename.netty.native.libs>
   </properties>
@@ -2528,5 +2531,16 @@ flexible messaging model and an intuitive client API.</description>
         <enabled>false</enabled>
       </snapshots>
     </repository>
+    <repository>
+      <id>dataos.releases</id>
+      <name>DataOS Releases</name>
+      <url>${dataos.releases.repo}</url>
+    </repository>
   </repositories>
+  <distributionManagement>
+    <repository>
+      <id>dataos.releases</id>
+      <url>${dataos.releases.repo}</url>
+    </repository>
+  </distributionManagement>
 </project>
